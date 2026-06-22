@@ -56,65 +56,73 @@ endfunction
 " Setup {{{
 
 " Adapted from unimpaired.vim by Tim Pope.
-function! caser#DoAction(fn, type)
+function! caser#DoAction(fn, type, ...)
+  let view_save = a:0 ? a:1 : winsaveview()
+
   " backup settings that we will change
   let sel_save = &selection
   let cb_save = &clipboard
-
-  " make selection and clipboard work the way we need
-  set selection=inclusive clipboard-=unnamed clipboard-=unnamedplus
-
-  " backup the unnamed register, which we will be yanking into
   let reg_save = @@
-  let sel = ""
 
-  " yank the relevant text, and also set the visual selection (which will be reused if the text
-  " needs to be replaced)
-  if a:type =~ '^\d\+$'
-    " if type is a number, then select that many lines
-    let sel = 'V'.a:type.'$y'
-  elseif a:type =~ '^.$'
-    " if type is 'v', 'V', or '<C-V>' (i.e. 0x16) then reselect the visual region
-    let sel = "`<" . a:type . "`>y"
-  elseif a:type == 'line'
-    " line-based text motion
-    let sel = "'[V']y"
-  elseif a:type == 'block'
-    " block-based text motion
-    let sel = "`[\<C-V>`]y"
-  else
-    " char-based text motion
-    let sel = "`[v`]y"
-  endif
+  try
+    " make selection and clipboard work the way we need
+    set selection=inclusive clipboard-=unnamed clipboard-=unnamedplus
 
-  silent exe 'normal! ' . sel
+    let sel = ""
 
-  " call the user-defined function, passing it the contents of the unnamed register
-  let repl = {"caser#".a:fn}(@@)
+    " yank the relevant text, and also set the visual selection (which will be reused if the text
+    " needs to be replaced)
+    if a:type =~ '^\d\+$'
+      " if type is a number, then select that many lines
+      let sel = 'V'.a:type.'$y'
+    elseif a:type =~ '^.$'
+      " if type is 'v', 'V', or '<C-V>' (i.e. 0x16) then reselect the visual region
+      let sel = "`<" . a:type . "`>y"
+    elseif a:type == 'line'
+      " line-based text motion
+      let sel = "'[V']y"
+    elseif a:type == 'block'
+      " block-based text motion
+      let sel = "`[\<C-V>`]y"
+    else
+      " char-based text motion
+      let sel = "`[v`]y"
+    endif
 
-  " if the function returned a value, then replace the text
-  if type(repl) == 1
-    " put the replacement text into the unnamed register, and also set it to be a
-    " characterwise, linewise, or blockwise selection, based upon the selection type of the
-    " yank we did above
-    call setreg('@', repl, getregtype('@'))
+    silent exe 'normal! ' . sel
 
-    " reselect the visual region and paste
-    normal! gvp
-  endif
+    " call the user-defined function, passing it the contents of the unnamed register
+    let repl = {"caser#".a:fn}(@@)
 
-  " restore saved settings and register value
-  let @@ = reg_save
-  let &selection = sel_save
-  let &clipboard = cb_save
+    " if the function returned a value, then replace the text
+    if type(repl) == 1
+      " put the replacement text into the unnamed register, and also set it to be a
+      " characterwise, linewise, or blockwise selection, based upon the selection type of the
+      " yank we did above
+      call setreg('@', repl, getregtype('@'))
+
+      " reselect the visual region and paste
+      normal! gvp
+    endif
+
+  finally
+    " restore saved settings, register value, and cursor position
+    let @@ = reg_save
+    let &selection = sel_save
+    let &clipboard = cb_save
+    call winrestview(view_save)
+  endtry
 endfunction
 
 function! caser#ActionOpfunc(type)
-  return caser#DoAction(s:encode_fn, a:type)
+  let view_save = exists('s:view_save') ? s:view_save : winsaveview()
+  unlet! s:view_save
+  return caser#DoAction(s:encode_fn, a:type, view_save)
 endfunction
 
 function! caser#ActionSetup(fn)
   let s:encode_fn = a:fn
+  let s:view_save = winsaveview()
   let &opfunc = matchstr(expand('<sfile>'), '\d\+_').'caser#ActionOpfunc'
 endfunction
 
